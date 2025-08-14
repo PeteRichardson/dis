@@ -4,6 +4,8 @@ include(CheckSymbolExists)
 
 add_executable (dis 
   dis.c
+  memory.c
+  memory.h
   vrEmu6502.c
   vrEmu6502.h
 )
