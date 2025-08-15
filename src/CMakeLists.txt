@@ -6,6 +6,8 @@ add_executable (dis
   dis.c
   memory.c
   memory.h
+  hexfile.c
+  hexfile.h
   vrEmu6502.c
   vrEmu6502.h
 )
