@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
 
     BuildMemory(program_addr, program_len, program_image);
 
-    DumpRegions();
+    // DumpRegions();
 
     vrEmu6502Model cpuModel = CPU_65C02;
 
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     while (pc < base + program_len) {
         uint8_t next_pc_offset = vrEmu6502DisassembleInstruction(vr6502, pc, sizeof(buffer), buffer, NULL, NULL);
         // address and instruction
-        printf("%04x:  %-10s", pc, buffer);
+        printf("%04x: ", pc);
 
         // hex bytes
         uint8_t opcode = MemRead(pc, 0);
@@ -55,14 +55,17 @@ int main(int argc, char** argv) {
 
         uint8_t instr_len = base + next_pc_offset - pc;
         if (instr_len == 1) {
-            printf("; %02x\n", opcode);
+            printf("%02x        ", opcode);
         }
         else if (instr_len == 2) {
-            printf("; %02x %01x\n", opcode, next_byte);
+            printf("%02x %01x     ", opcode, next_byte);
         }
         else if (instr_len == 3) {
-            printf("; %02x %02x %02x\n", opcode, next_byte, third_byte);
+            printf("%02x %02x %02x  ", opcode, next_byte, third_byte);
         }
+
+        printf("%-10s\n", buffer);
+
         pc = pc + instr_len;
     }
 }
