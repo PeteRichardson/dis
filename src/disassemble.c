@@ -1,20 +1,21 @@
 #include "disassemble.h"
 #include <stddef.h>
+#include <stdio.h>
 
 uint16_t Dis6502(
-    vrEmu6502Model cpu_model,
+    VrEmu6502* vr6502,
     uint16_t addr,
     uint8_t opcode, uint8_t byte1, uint16_t byte2,
     int bufferSize, char* buffer
 ) {
     uint16_t *refAddr = NULL;
-    char *labelMap = NULL;
+    const char* const* labelMap = NULL;
     uint8_t arg8 = byte1;
     uint16_t arg16 = (byte2 << 8) | byte1;
     const char* mnemonic = vrEmu6502OpcodeToMnemonicStr(vr6502, opcode);
 
-    const char* addr8Label = NULL;    // labelMap ? labelMap[arg8] : NULL;
-    const char* addr16Label = NULL;   // labelMap ? labelMap[arg16] : NULL;
+    const char* addr8Label  = labelMap ? labelMap[arg8]  : NULL;
+    const char* addr16Label = labelMap ? labelMap[arg16] : NULL;
 
     int offset = snprintf(buffer, bufferSize, "%s ", mnemonic);
     buffer += offset;
@@ -34,7 +35,7 @@ uint16_t Dis6502(
         snprintf(buffer, bufferSize, "%s, x", addr16Label);
       else
         snprintf(buffer, bufferSize, "$%04x, x", arg16);
-      if (refAddr) *refAddr = arg16 + vr6502->ix;
+      if (refAddr) *refAddr = arg16 + vrEmu6502GetX(vr6502);
       return addr + 3;
 
     case AddrModeAbsY:
@@ -42,7 +43,7 @@ uint16_t Dis6502(
         snprintf(buffer, bufferSize, "%s, y", addr16Label);
       else
         snprintf(buffer, bufferSize, "$%04x, y", arg16);
-      if (refAddr) *refAddr = arg16 + vr6502->iy;
+      if (refAddr) *refAddr = arg16 + vrEmu6502GetY(vr6502);
       return addr + 3;
 
     case AddrModeImm:
@@ -66,7 +67,7 @@ uint16_t Dis6502(
         snprintf(buffer, bufferSize, "(%s, x)", addr16Label);
       else
         snprintf(buffer, bufferSize, "($%04x, x)", arg16);
-      if (refAddr) *refAddr = arg16 + vr6502->ix;
+      if (refAddr) *refAddr = arg16 + vrEmu6502GetX(vr6502);
       return addr + 3;
 
     case AddrModeIndX:
@@ -74,7 +75,7 @@ uint16_t Dis6502(
         snprintf(buffer, bufferSize, "(%s, x)", addr8Label);
       else
         snprintf(buffer, bufferSize, "($%02x, x)", arg8);
-      if (refAddr) *refAddr = arg8 + vr6502->ix;
+      if (refAddr) *refAddr = arg8 + vrEmu6502GetX(vr6502);
       return addr + 2;
 
     case AddrModeIndY:
@@ -114,7 +115,7 @@ uint16_t Dis6502(
         snprintf(buffer, bufferSize, "%s, x", addr8Label);
       else
         snprintf(buffer, bufferSize, "$%02x, x", arg8);
-      if (refAddr) *refAddr = arg8 + vr6502->ix;
+      if (refAddr) *refAddr = arg8 + vrEmu6502GetX(vr6502);
       return addr + 2;
 
     case AddrModeZPY:
@@ -122,7 +123,7 @@ uint16_t Dis6502(
         snprintf(buffer, bufferSize, "%s, y", addr8Label);
       else
         snprintf(buffer, bufferSize, "$%02x, y", arg8);
-      if (refAddr) *refAddr = arg8 + vr6502->iy;
+      if (refAddr) *refAddr = arg8 + vrEmu6502GetY(vr6502);
       return addr + 2;
 
     case AddrModeAcc:

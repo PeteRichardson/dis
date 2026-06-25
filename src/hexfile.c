@@ -6,9 +6,10 @@
 /* ------------------------------------------------------------------
  * read the hex file
  */
-int readHexFile(const char* hexFilename) {
+uint16_t readHexFile(const char* hexFilename, uint16_t* out_end) {
 
     uint16_t runAddress = 0;
+    uint16_t lastAddr = 0;
 #ifndef HAVE_STRNCPY_S
 #define strncpy_s(A, B, C, D) strncpy((A), (C), (D)); (A)[(D)] = 0
 #endif
@@ -43,15 +44,19 @@ int readHexFile(const char* hexFilename) {
             int recType = (int)strtol(tmpBuffer, NULL, 16);
 
             if (recType == 0) {
+                if (runAddress == 0)
+                    runAddress = (uint16_t)destAddr;
                 for (int i = 0; i < numBytes; ++i) {
                     strncpy_s(tmpBuffer, sizeof(tmpBuffer), lineBuffer + 9 + (i * 2), 2);
                     uint8_t value = (uint8_t)strtol(tmpBuffer, NULL, 16);
                     MemWrite(destAddr + i, value);
                 }
+                uint16_t recordEnd = (uint16_t)(destAddr + numBytes - 1);
+                if (recordEnd > lastAddr)
+                    lastAddr = recordEnd;
             }
-            else if (runAddress == 0 && recType == 1) {
-                runAddress = (uint16_t)destAddr;
-                break;
+            else if (recType == 1) {
+                break; // EOF record
             }
         }
 
@@ -70,5 +75,6 @@ int readHexFile(const char* hexFilename) {
         printf("ERROR: Unable to open HEX file: %s\n", hexFilename);
         return 0;
     }
-    return 1;
+    if (out_end) *out_end = lastAddr;
+    return runAddress;
 }

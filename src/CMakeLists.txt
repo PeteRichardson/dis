@@ -25,5 +25,8 @@ if (HAVE_STRNCPY_S)
     target_compile_definitions(dis PRIVATE -DHAVE_STRNCPY_S)
 endif()
 
+add_executable(test_memory test_memory.c memory.c memory.h)
+add_test(NAME memory COMMAND test_memory)
+
 
 
