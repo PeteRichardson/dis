@@ -9,6 +9,7 @@ bool MapROM(uint16_t addr, const uint8_t* data, uint16_t len);
 bool MapRAM(uint16_t addr, uint8_t* storage, uint16_t len);
 bool MapFill(uint16_t addr, uint16_t len, uint8_t fill);
 bool MapResetVector(uint16_t entry);
+bool MapVectorPage(uint16_t nmi, uint16_t reset, uint16_t irq);
 void MemSetDefaultFill(uint8_t fill);
 void DumpRegions(void);
 #endif
