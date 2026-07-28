@@ -6,7 +6,9 @@
 
 ## Overview
 
-`dis` is a 6502/65C02 disassembler written in C11. Its real target is a
+`dis` is a 6502/65C02 disassembler written in C11. It reads Intel HEX
+files and RP6502 ROMs (`.rp6502`), detecting the format from the file
+contents rather than the extension. Its real target is a
 `dis <addr> <len>` command in the PicoComputer REPL running on the RP6502's
 RIA (a W65C02S); the command-line tool here is the host-side proving ground
 for that code.
@@ -27,7 +29,7 @@ memory access routines.
   mnemonics, selectable at runtime
 - Keep the shippable surface to `disassemble.c/h` + `vrEmu6502.c/h`, with
   no dependency on the host-side memory model or file loading
-- Accept an Intel HEX file on the host for convenience
+- Accept an Intel HEX file or an RP6502 ROM on the host for convenience
 
 **Non-Goals:**
 - Execution or emulation — the CPU instance exists only to drive opcode
@@ -43,12 +45,13 @@ memory access routines.
 The program is a thin pipeline: load → map → decode → print. There is
 no persistent state beyond the memory regions and the CPU instance.
 
-The five source files divide cleanly into three layers:
+The source files divide cleanly into three layers:
 
-**Input** (`hexfile.c`) parses Intel HEX records and writes the raw
-bytes into the memory model. It returns the load address of the first
-data record and the last address written, giving the caller the exact
-range to disassemble.
+**Input** (`hexfile.c`, `rp6502file.c`) parses a program file and writes
+the raw bytes into the memory model, returning the address to start from
+and the last address written. `dis.c` picks a reader by sniffing the file
+contents for the `#!RP6502` shebang rather than trusting the extension, so
+a ROM saved under any name still loads correctly.
 
 **Memory** (`memory.c`) is a sparse address space. Rather than
 allocating a 64 KiB flat buffer (most of which would be empty for a
@@ -75,6 +78,31 @@ record types are handled — in particular, the x86-specific entry-point
 records (types `03` and `05`) are ignored, which is correct for 6502
 files. Returns the start address and last written address to the caller
 as a `uint16_t` return value and `out_end` out-parameter.
+
+**`rp6502file.c`**
+Reader for RP6502 ROM files, the format PicoComputer binaries ship in. The
+format is a text/binary hybrid and this parser mirrors the RIA's own
+(`src/ria/mon/rom.c` in picocomputer/rp6502): a `#!RP6502` shebang matched
+case-insensitively, an optional `#>len crc` group header bounding the
+loadable chunk section, `#` comment lines, and `addr len crc` chunk headers
+each followed by that many raw bytes. Numbers may be decimal, `0xFF` or
+`$FF`.
+
+Three decisions distinguish it from `hexfile.c`. Chunks targeting XRAM
+(`$10000`-`$1FFFF`) are counted and skipped, because XRAM is not in the
+6502 address space and holds data rather than code. The entry point is the
+reset vector at `$FFFC`/`$FFFD` when the ROM supplies one, falling back to
+the lowest loaded address; chunks lying entirely at or above `$FFFA` are
+hardware vectors and are excluded from the disassembly range, so a ROM that
+writes `$FFFC` does not stretch the listing to the top of memory. And CRCs
+are validated: each chunk carries a CRC-32 and a mismatch is an error, as
+it is on the RIA.
+
+The CRC is standard IEEE/zlib CRC-32. The RIA's `mem_crc32` is
+`~lfs_crc(~crc, ...)`, and littlefs's `lfs_crc` is the reflected
+nibble-table CRC-32 with polynomial `$EDB88320`; the implementation is
+pinned by known vectors including the canonical `$CBF43926` for
+`"123456789"`, cross-checked against Python's `zlib.crc32`.
 
 **`memory.c`**
 Implements the sparse 6502 address space. Regions are stored in
@@ -113,10 +141,14 @@ tables and disassembly helpers — no clock ticks are run.
 
 When the user runs `./dis prog.hex`:
 
-1. `main` parses `--cpu`, maps a RAM region to receive the file, then
-   calls `readHexFile("prog.hex", &end)`. The parser iterates records and
-   calls `MemWrite` for every data byte, returning the load address of the
-   first record as `base`.
+1. `main` parses `--cpu` and maps a RAM region to receive the file. It
+   then calls `isRp6502File` to pick a reader. For Intel HEX,
+   `readHexFile("prog.hex", &end)` iterates records and calls `MemWrite`
+   for every data byte, returning the first record's load address as
+   `base`. For a ROM, `readRp6502File` loads the RAM chunks and reports
+   the entry point, the code extent, and any XRAM chunks it skipped;
+   `dis.c` prints those notes to stderr so the listing on stdout stays
+   pipeable.
 
 2. `main` calls `DisInit(model)`, then
    `DisRange(base, end - base + 1, readByte, printInstruction)`.
@@ -184,6 +216,36 @@ requires `bbr0` in the output while forbidding `brk`. If the mapping
 regresses, the file loads as zeros and every line becomes `brk`. Verified
 by removing the mapping: the unit tests still passed and `cli_hexfile`
 failed.
+
+**RP6502 ROMs.** `src/test_rp6502file.c` generates ROM files at run time
+and covers the CRC-32 against known vectors, the minimal ROM, all three
+number formats, comments, XRAM chunks being skipped and counted, an
+XRAM-only ROM being an error, the reset vector as entry point, a vector
+pointing outside loaded code falling back, the `#>` group header bounding
+the chunk section so a trailing named asset is not parsed as a chunk, CRC
+mismatch, missing and lowercase shebangs, truncated payloads, address and
+length validation, malformed headers, and content-based format detection.
+
+`cli_rp6502` is the end-to-end guard. Its fixture's reset vector points at
+`$0205` rather than the `$0200` load address, so requiring the listing to
+begin at `0205` proves the entry point came from the vector and not from
+the first chunk. The fixture also carries an XRAM chunk that must be
+reported as skipped rather than disassembled.
+
+Regenerate `testdata/w65c02_demo.rp6502` with:
+
+```python
+import zlib
+def crc(b): return zlib.crc32(b) & 0xFFFFFFFF
+code   = bytes([0x0f,0x12,0x05, 0x07,0x10, 0x1a, 0x80,0x05, 0xb2,0x10])
+vector = bytes([0x05, 0x02])   # $0205
+xram   = bytes(range(16))
+with open("testdata/w65c02_demo.rp6502", "wb") as f:
+    f.write(b"#!RP6502\n# see docs/design.md to regenerate\n")
+    f.write(("%d %d %d\n" % (0x0200, len(code),   crc(code))).encode());   f.write(code)
+    f.write(("%d %d %d\n" % (0x10000, len(xram),  crc(xram))).encode());   f.write(xram)
+    f.write(("%d %d %d\n" % (0xFFFC, len(vector), crc(vector))).encode()); f.write(vector)
+```
 
 ---
 
@@ -289,4 +351,5 @@ Still open:
 | Date | Change |
 |------|--------|
 | 2026-06-25 | Initial document generated from codebase |
+| 2026-07-28 | RP6502 ROM (`.rp6502`) support: content-based format detection, XRAM chunks skipped, reset vector as entry point, CRC-32 validation. |
 | 2026-07-28 | Callback API (`DisInit`/`DisOne`/`DisRange`), three-layer test harness, `--cpu` flag. Corrected the claim that vrEmu6502 allocates 64 KiB. Recorded the HEX-loading and upstream decode defects. |

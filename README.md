@@ -22,9 +22,42 @@ access routines and none of the host-side scaffolding goes with it.
 ```sh
 ./build/bin/dis                          # built-in demo program
 ./build/bin/dis prog.hex                 # disassemble an Intel HEX file
+./build/bin/dis game.rp6502              # ...or an RP6502 ROM
 ./build/bin/dis --cpu w65c02 prog.hex    # the RP6502's actual CPU
 ctest --test-dir build                   # 1300+ assertions
 ```
+
+The input format is detected from the file contents, not the extension.
+
+### RP6502 ROMs
+
+PicoComputer binaries ship as `.rp6502` files, a text/binary hybrid mirrored
+from the RIA's own parser (`src/ria/mon/rom.c` in
+[picocomputer/rp6502](https://github.com/picocomputer/rp6502)):
+
+```
+#!RP6502                 shebang, matched case-insensitively
+#>len crc                optional group header bounding the chunk section
+# comment                lines starting with # are skipped
+addr len crc             chunk header; numbers may be decimal, 0xFF or $FF
+<len raw binary bytes>   payload, immediately after the newline
+```
+
+Three behaviours worth knowing:
+
+- **XRAM chunks are skipped.** Addresses `$10000`–`$1FFFF` are XRAM, which
+  isn't in the 6502 address space and holds data rather than code. They're
+  counted and reported on stderr, never disassembled.
+- **The reset vector is the entry point.** If the ROM writes `$FFFC`/`$FFFD`,
+  disassembly starts there — that's where the CPU begins, and the RIA only
+  treats a ROM as runnable when both bytes are present. Otherwise it starts at
+  the lowest loaded address. A vector pointing outside the loaded code falls
+  back rather than disassembling unmapped fill.
+- **CRCs are validated.** Each chunk carries a CRC-32 and a mismatch is an
+  error, matching the RIA. This is deliberately stricter than the Intel HEX
+  reader, which ignores its checksums.
+
+Notes go to stderr, so the listing on stdout stays pipeable.
 
 ### Two things I had wrong
 

@@ -3,6 +3,7 @@
 #include "vrEmu6502.h"
 #include "memory.h"
 #include "hexfile.h"
+#include "rp6502file.h"
 #include "disassemble.h"
 
 static const uint8_t demo_image[] = {
@@ -60,8 +61,10 @@ static int parseCpu(const char* name, vrEmu6502Model* out) {
 }
 
 static void usage(FILE* to) {
-    fprintf(to, "usage: dis [--cpu MODEL] [program.hex]\n");
-    fprintf(to, "  MODEL: 6502, 6502u, 65c02 (default), w65c02, r65c02\n");
+    fprintf(to, "usage: dis [--cpu MODEL] [program]\n");
+    fprintf(to, "  MODEL:   6502, 6502u, 65c02 (default), w65c02, r65c02\n");
+    fprintf(to, "  program: an Intel HEX file or an RP6502 ROM (.rp6502);\n");
+    fprintf(to, "           the format is detected from the contents\n");
     fprintf(to, "  with no file, disassembles a small built-in demo program\n");
 }
 
@@ -69,7 +72,7 @@ int main(int argc, char** argv) {
     /* The RP6502's RIA is a W65C02S, but 65C02 stays the default so
        existing output is unchanged. */
     vrEmu6502Model model = CPU_65C02;
-    const char* hexPath = NULL;
+    const char* inputPath = NULL;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--cpu") == 0) {
@@ -89,19 +92,19 @@ int main(int argc, char** argv) {
             return 1;
         }
         else {
-            hexPath = argv[i];
+            inputPath = argv[i];
         }
     }
 
     MemSetDefaultFill(0x00);
 
     uint16_t base, end;
-    if (hexPath) {
+    if (inputPath) {
         /*
-         * readHexFile writes through MemWrite, which silently drops
-         * writes to unmapped addresses (memory.c). Without a RAM region
-         * underneath, every loaded byte was discarded and the file
-         * disassembled as a run of BRKs -- this path had never worked.
+         * Both readers write through MemWrite, which silently drops writes
+         * to unmapped addresses (memory.c). Without a RAM region
+         * underneath, every loaded byte is discarded and the file
+         * disassembles as a run of BRKs.
          *
          * The load extent is not known until the file is parsed, so back
          * the whole address space. Host-side only; the RIA supplies its
@@ -110,8 +113,28 @@ int main(int argc, char** argv) {
         static uint8_t image[0xffff];
         MapRAM(0x0000, image, sizeof image);
 
-        base = readHexFile(hexPath, &end);
-        if (base == 0) return 1;
+        /* Sniff the contents rather than the extension, so a ROM saved
+           under any name is still recognised. */
+        if (isRp6502File(inputPath)) {
+            Rp6502Rom rom;
+            if (!readRp6502File(inputPath, &rom)) return 1;
+
+            base = rom.entry;
+            end = rom.end;
+
+            /* Notes go to stderr so the listing itself stays pipeable. */
+            if (rom.xramChunks)
+                fprintf(stderr, "note: skipped %u XRAM chunk%s (%u bytes); "
+                                "XRAM is not 6502 address space\n",
+                        rom.xramChunks, rom.xramChunks == 1 ? "" : "s",
+                        (unsigned)rom.xramBytes);
+            if (rom.hasResetVector)
+                fprintf(stderr, "note: starting at reset vector $%04x\n", base);
+        }
+        else {
+            base = readHexFile(inputPath, &end);
+            if (base == 0) return 1;
+        }
     }
     else {
         base = 0x0200;

@@ -23,6 +23,7 @@ The binary lands at `build/bin/dis`.
 ```sh
 ./build/bin/dis                        # built-in demo program
 ./build/bin/dis prog.hex               # disassemble an Intel HEX file
+./build/bin/dis game.rp6502            # ...or an RP6502 ROM (format sniffed, not by extension)
 ./build/bin/dis --cpu w65c02 prog.hex  # 6502, 6502u, 65c02 (default), w65c02, r65c02
 ```
 
@@ -43,10 +44,12 @@ This is a 6502 CPU disassembler written in C11. It uses the [vrEmu6502](https://
 - **`test_disassemble.c`** — Three-layer test suite. See `docs/design.md`.
 - **`test_hexfile.c`** — Intel HEX parser tests. Generates its own `.hex` files at run time.
 - **`memory.c/h`** — Sparse 6502 memory model. Up to 16 named regions (ROM, RAM, FILL) in a linear array; later regions shadow earlier ones. Host-side only.
+- **`rp6502file.c/h`** — RP6502 ROM reader. Mirrors the RIA's parser in `src/ria/mon/rom.c` of picocomputer/rp6502. Validates CRC-32, skips XRAM chunks, uses the reset vector as the entry point.
+- **`test_rp6502file.c`** — ROM parser tests. Generates its own `.rp6502` files at run time.
 - **`hexfile.c/h`** — Intel HEX file reader. Parses records and writes bytes into the memory model via `MemWrite`.
 - **`vrEmu6502.c/h`** — Third-party 6502/65C02 emulator library (statically linked via `-DVR_EMU_6502_STATIC`).
 
-`testdata/` holds committed fixtures for tests that need a real file on disk — currently `w65c02_demo.hex`, used by the `cli_hexfile` end-to-end test. Tests that can generate their inputs do so at run time instead.
+`testdata/` holds committed fixtures for tests that need a real file on disk — currently `w65c02_demo.hex` and `w65c02_demo.rp6502`, used by the `cli_hexfile` and `cli_rp6502` end-to-end tests. Tests that can generate their inputs do so at run time instead.
 
 ### What ships to the PicoComputer
 

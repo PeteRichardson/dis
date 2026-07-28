@@ -10,6 +10,8 @@ add_executable (dis
   disassemble.h
   hexfile.c
   hexfile.h
+  rp6502file.c
+  rp6502file.h
   vrEmu6502.c
   vrEmu6502.h
 )
@@ -56,6 +58,25 @@ add_test(NAME cli_hexfile
 set_tests_properties(cli_hexfile PROPERTIES
   PASS_REGULAR_EXPRESSION "bbr0"
   FAIL_REGULAR_EXPRESSION "brk")
+
+add_executable(test_rp6502file
+  test_rp6502file.c
+  rp6502file.c
+  rp6502file.h
+  memory.c
+  memory.h
+)
+add_test(NAME rp6502file COMMAND test_rp6502file)
+
+# End-to-end guard for .rp6502 support. The fixture's reset vector points
+# at $0205 rather than the load address, so requiring the listing to start
+# there proves the entry point came from the vector and not from the first
+# chunk. Its XRAM chunk must be reported as skipped, never disassembled.
+add_test(NAME cli_rp6502
+  COMMAND dis --cpu w65c02 ${CMAKE_SOURCE_DIR}/testdata/w65c02_demo.rp6502)
+set_tests_properties(cli_rp6502 PROPERTIES
+  PASS_REGULAR_EXPRESSION "0205: "
+  FAIL_REGULAR_EXPRESSION "ERROR")
 
 
 
