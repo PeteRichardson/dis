@@ -92,7 +92,11 @@ static const struct {
     uint8_t     len;
     const char* why;
 } unmeasurable[] = {
-    { 0x00, "brk", 1, "PC jumps to the IRQ vector" },
+    /* 2, not 1: the CPU pushes addr+2 and skips the signature byte. The
+       oracle cannot see this because the PC jumps to the IRQ vector, but
+       brk() in vrEmu6502.c does push((++pc) >> 8), which is the same
+       claim. See disIsBrk in disassemble.c. */
+    { 0x00, "brk", 2, "PC jumps to the IRQ vector" },
     { 0x20, "jsr", 3, "PC jumps to the subroutine" },
     { 0x40, "rti", 1, "PC pulled from the stack" },
     { 0x4c, "jmp", 3, "PC jumps to the target" },
@@ -238,7 +242,13 @@ static const struct {
     { CPU_6502, { 0xa1, 0x10 },       2, "lda ($10, x)" },   /* indexed indirect */
     { CPU_6502, { 0xb1, 0x10 },       2, "lda ($10), y" },   /* indirect indexed */
     { CPU_6502, { 0x20, 0x34, 0x12 }, 3, "jsr $1234" },
-    { CPU_6502, { 0x00 },             1, "brk" },
+    /*
+     * Deliberately disagrees with radare2, which reports BRK as 1 byte
+     * (as does da65; Capstone reports 2). The CPU skips the signature
+     * byte, so a debugger listing that reports 1 decodes it as an
+     * instruction and drifts. Do not "correct" this to match r2.
+     */
+    { CPU_6502, { 0x00, 0xea },       2, "brk $ea" },
     { CPU_6502, { 0xd0, 0x05 },       2, "bne $1007" },      /* relative, forward */
     { CPU_6502, { 0xd0, 0xfe },       2, "bne $1000" },      /* relative, to self */
 
@@ -412,23 +422,25 @@ static void test_range(void) {
     emitCount = 0;
     DisRange(TEST_ADDR, sizeof image, disRead, captureEmit);
 
-    CHECK(emitCount == 6, "range: %d instructions emitted, expected 6", emitCount);
-    if (emitCount == 6) {
-        CHECK(emitted[0].addr == TEST_ADDR && emitted[0].len == 1
-                  && strcmp(emitted[0].text, "brk") == 0,
+    /* Five, not six: BRK absorbs the 0xea after it as its signature byte
+       rather than leaving it to decode as a separate NOP. */
+    CHECK(emitCount == 5, "range: %d instructions emitted, expected 5", emitCount);
+    if (emitCount == 5) {
+        CHECK(emitted[0].addr == TEST_ADDR && emitted[0].len == 2
+                  && strcmp(emitted[0].text, "brk $ea") == 0,
               "range[0]: $%04x len %u \"%s\"",
               emitted[0].addr, emitted[0].len, emitted[0].text);
-        CHECK(emitted[2].len == 2 && strcmp(emitted[2].text, "lda #$42") == 0,
-              "range[2]: len %u \"%s\"", emitted[2].len, emitted[2].text);
-        CHECK(emitted[5].addr == TEST_ADDR + 9 && emitted[5].len == 3
-                  && strcmp(emitted[5].text, "jmp $2000") == 0,
-              "range[5]: $%04x len %u \"%s\"",
-              emitted[5].addr, emitted[5].len, emitted[5].text);
+        CHECK(emitted[1].len == 2 && strcmp(emitted[1].text, "lda #$42") == 0,
+              "range[1]: len %u \"%s\"", emitted[1].len, emitted[1].text);
+        CHECK(emitted[4].addr == TEST_ADDR + 9 && emitted[4].len == 3
+                  && strcmp(emitted[4].text, "jmp $2000") == 0,
+              "range[4]: $%04x len %u \"%s\"",
+              emitted[4].addr, emitted[4].len, emitted[4].text);
         /* Raw bytes must reach the callback intact for the hex column. */
-        CHECK(emitted[5].bytes[0] == 0x4c && emitted[5].bytes[1] == 0x00
-                  && emitted[5].bytes[2] == 0x20,
-              "range[5]: raw bytes %02x %02x %02x",
-              emitted[5].bytes[0], emitted[5].bytes[1], emitted[5].bytes[2]);
+        CHECK(emitted[4].bytes[0] == 0x4c && emitted[4].bytes[1] == 0x00
+                  && emitted[4].bytes[2] == 0x20,
+              "range[4]: raw bytes %02x %02x %02x",
+              emitted[4].bytes[0], emitted[4].bytes[1], emitted[4].bytes[2]);
     }
 
     /* A zero-length range emits nothing. */

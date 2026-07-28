@@ -63,6 +63,12 @@ That turned up five real defects, three of them upstream in vrEMU6502:
   the buffer, since that return is what it *would* have written. Present in
   vrEMU6502's own disassembler too.
 - Implied-mode instructions carried a trailing space.
+- `BRK` was reported as 1 byte. The CPU pushes `addr+2`, skipping the
+  signature byte after the opcode, so reporting 1 *decodes* that byte as an
+  instruction. `00 01 a9 42 a5 10` came out as `brk` / `ora ($a9, x)` /
+  `ldd #$a5` / `bpl $0207` — both real instructions lost, no resynchronization.
+  Now 2 bytes, rendered `brk $01`. This diverges from da65 and radare2 on
+  purpose; see `docs/design.md`.
 
 ### What's next
 

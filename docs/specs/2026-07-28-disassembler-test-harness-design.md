@@ -114,6 +114,7 @@ are non-NULL but never calls them during disassembly.
 | Instruction straddles end of range (`dis $1FFF 1` where a 3-byte `JMP` starts at `$1FFF`) | Decode it fully, reading past the limit | `len` means "where to stop *starting* instructions." Matches how most debuggers behave. Noted risk: reads slightly past the window, which is harmless for RAM/ROM but relevant if ever pointed at memory-mapped I/O |
 | Buffer too small | Truncate cleanly, always NUL-terminate, still return the true next address | The listing keeps scrolling even if one line clips. Keeps return value `0` meaning exactly one thing: undecodable |
 | `labelMap` / `refAddr` | Delete | Currently locals hardcoded to `NULL`, so every branch guarded by them is unreachable. Sketch preserved in git at commit `1181eab` |
+| `BRK` length | 2 bytes, signature shown as operand | Decided after implementation. Reporting 1 *decodes* the signature byte and the listing drifts irrecoverably — see below |
 
 On deleting the label code: it is indexed directly by address (`labelMap[arg16]`), making
 it a 65,536-entry pointer table — 256 KB on the Pico, more RAM than the RP6502 gives a
@@ -151,6 +152,19 @@ Two further defects were found during implementation, both upstream in vrEmu6502
    six affected opcodes are identified directly in `disassemble.c`, gated on mnemonic
    because `$1a`/`$3a` are NOPs on NMOS and only `INC A`/`DEC A` on CMOS.
 6. **`JAM` execution advances the PC by 2** while its table says 1 — see Layer 1 below.
+
+8. **`BRK` reported as 1 byte.** The CPU pushes `addr+2` and skips the signature byte
+   after the opcode; `brk()` in `vrEmu6502.c` models this correctly in execution while
+   the opcode table declares implied. Reporting 1 does not merely display that byte
+   oddly, it *decodes* it: given `00 01 a9 42 a5 10` the old behaviour produced
+   `brk` / `ora ($a9, x)` / `ldd #$a5` / `bpl $0207`, losing both real instructions with
+   no resynchronization. A signature of `$ea` decodes as a harmless `nop`, which is why
+   the built-in demo hid it. Now 2 bytes rendered `brk $01`.
+
+   Deliberately diverges from da65 and radare2's native plugin, which report 1; Capstone
+   reports 2. One golden test case therefore disagrees with radare2 on purpose and says
+   so in a comment. Costs: output no longer matches those tools line-for-line on `BRK`,
+   and zero-filled regions render as half as many lines.
 
 And one outside the disassembler, in the CLI:
 

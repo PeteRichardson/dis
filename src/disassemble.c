@@ -45,6 +45,29 @@ static bool disIsBitBranch(const char* mnemonic) {
 }
 
 /*
+ * BRK is a 2-byte instruction.
+ *
+ * The CPU pushes addr+2 as the return address, skipping the byte after
+ * the opcode -- see brk() in vrEmu6502.c, which does push((++pc) >> 8).
+ * That byte is conventionally a signature identifying which software
+ * interrupt fired.
+ *
+ * The opcode tables declare BRK as implied, which would report length 1
+ * and decode the signature byte as an instruction in its own right. A
+ * signature of $01 would become "ora ($nn,x)", consuming two further real
+ * bytes, and the listing would drift from what the CPU executes for the
+ * rest of the range. A signature of $ea decodes as a harmless "nop",
+ * which is what hides the problem in the built-in demo program.
+ *
+ * da65 and radare2's native plugin report 1; Capstone reports 2. There is
+ * no consensus to defer to, so this follows the hardware: a disassembler
+ * driving a debugger has to stay in step with the CPU.
+ */
+static bool disIsBrk(uint8_t opcode, const char* mnemonic) {
+    return opcode == 0x00 && mnemonic != NULL && strcmp(mnemonic, "brk") == 0;
+}
+
+/*
  * Accumulator-mode instructions.
  *
  * vrEmu6502 never reports AddrModeAcc for anything: opcodeToAddrMode in
@@ -78,7 +101,10 @@ void DisInit(vrEmu6502Model model) {
 uint8_t DisInstLen(uint8_t opcode) {
     if (!disCpu) return 0;
 
-    if (disIsBitBranch(vrEmu6502OpcodeToMnemonicStr(disCpu, opcode))) return 3;
+    const char* mnemonic = vrEmu6502OpcodeToMnemonicStr(disCpu, opcode);
+
+    if (disIsBitBranch(mnemonic)) return 3;
+    if (disIsBrk(opcode, mnemonic)) return 2;
 
     switch (vrEmu6502GetOpcodeAddrMode(disCpu, opcode)) {
     case AddrModeAbs:
@@ -134,6 +160,12 @@ uint16_t DisOne(uint16_t addr, DisReadFn read, int bufSize, char* buf) {
     }
     else if (disIsAccumulator(opcode, mnemonic)) {
         snprintf(operand, sizeof operand, "a");
+    }
+    else if (disIsBrk(opcode, mnemonic)) {
+        /* Show the signature byte: at a breakpoint it is the thing you
+           actually want to read, and leaving it out would print a blank
+           where a real byte of memory sits. */
+        snprintf(operand, sizeof operand, "$%02x", arg8);
     }
     else switch (vrEmu6502GetOpcodeAddrMode(disCpu, opcode)) {
     case AddrModeAbs:
