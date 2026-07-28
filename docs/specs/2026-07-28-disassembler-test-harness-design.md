@@ -1,7 +1,9 @@
 # Disassembler API Reshape + Test Harness — Design
 
 *Date: 2026-07-28*
-*Status: approved, implementation in progress*
+*Status: implemented. Layer 1 was redesigned mid-implementation — see "The replacement
+oracle" — and two further upstream defects plus one CLI defect were found; both are
+recorded below.*
 
 ---
 
@@ -57,9 +59,15 @@ Neither plugin decodes 65C02, which is precisely the variant that ships. r2 is t
 useful only as a one-time offline cross-check of the NMOS subset, not as a test-time
 oracle.
 
-**The replacement oracle is better anyway.** vrEmu6502 ships its own working
-disassembler, `vrEmu6502DisassembleInstruction`. That makes an in-process differential
-possible across every CPU model the library supports, with no external dependency.
+**The replacement oracle.** The first attempt was to differential-test against the
+library's own `vrEmu6502DisassembleInstruction`. That was abandoned during
+implementation: `Dis6502` turns out to be a near-verbatim copy of it, sharing the same
+15 cases and the same `snprintf` defect, so the comparison would have passed trivially
+while both reported the same wrong length for `BBR`/`BBS`.
+
+The oracle used instead is the emulator's *execution* path — set the PC, run one
+instruction, read where the PC landed. That advances the PC through the addressing-mode
+functions (`ab`, `abx`, `zp`, ...), genuinely independent of the disassembly switch.
 
 ---
 
@@ -131,8 +139,26 @@ Found by reading, not by guessing. All four are in the code being rewritten.
    RIA is a W65C02S, this affects the actual target. `RMB`/`SMB` are 2-byte zero-page and
    should map to `AddrModeZP` correctly.
 
-Defect 4 is a hypothesis from reading the enum; Phase 2 confirms it empirically before
-Phase 3 fixes it.
+Defect 4 was a hypothesis from reading the enum. Confirmed: the tables declare
+`{bbr0, zp, 5}` (`src/vrEmu6502.c:1958`), and disabling the fix produces 64 test
+failures across W65C02 and R65C02.
+
+Two further defects were found during implementation, both upstream in vrEmu6502:
+
+5. **Accumulator mode is never reported.** `opcodeToAddrMode` (`src/vrEmu6502.c:2006`)
+   has no case for the `acc` addressing function, so those opcodes fall through to its
+   closing `return AddrModeImp` and `AddrModeAcc` is returned for nothing at all. The
+   six affected opcodes are identified directly in `disassemble.c`, gated on mnemonic
+   because `$1a`/`$3a` are NOPs on NMOS and only `INC A`/`DEC A` on CMOS.
+6. **`JAM` execution advances the PC by 2** while its table says 1 — see Layer 1 below.
+
+And one outside the disassembler, in the CLI:
+
+7. **Intel HEX loading had never worked.** `readHexFile` writes through `MemWrite`,
+   which silently drops writes to unmapped addresses (`src/memory.c:150`), and `dis.c`
+   never mapped RAM first — so every loaded byte was discarded and any file disassembled
+   as a run of `brk`s. Confirmed pre-existing by running commit `1181eab` against the
+   same file. Fixed in `dis.c`; `hexfile.c` remains untouched.
 
 ---
 
@@ -142,19 +168,31 @@ Three layers, cheapest and broadest first, in `src/test_disassemble.c`. Plain C 
 `assert()`, matching `src/test_memory.c`, registered via `add_test` in
 `src/CMakeLists.txt`.
 
-### Layer 1 — in-process differential
+### Layer 1 — execution oracle
 
 For each of `CPU_6502`, `CPU_6502U`, `CPU_65C02`, `CPU_W65C02`, `CPU_R65C02` × all 256
-opcodes, assert `DisOne` returns the same instruction length as
-`vrEmu6502DisassembleInstruction` given the same bytes. 1,280 cases, milliseconds, no
-external tools.
+opcodes, assert `DisInstLen` and `DisOne` agree with where the PC lands after
+`vrEmu6502InstCycle` executes that opcode. 1,280 cases, milliseconds, no external tools.
 
 Length is the invariant that matters most: a wrong length desynchronizes every
 instruction after it.
 
-**Stated limitation:** both paths read the same opcode tables, so a wrong table entry is
-invisible to this layer. It catches bugs in `Dis6502`'s own switch, not bugs in
-vrEmu6502. Layers 2 and 3 exist to cover what it cannot.
+Operand bytes are always `$00`, so a taken branch and an untaken branch land on the same
+address and the measurement is unambiguous.
+
+**Opcodes the oracle cannot measure.** Seven control-flow opcodes per model (`BRK`,
+`JSR`, `RTI`, `JMP` abs/ind/indx, `RTS`) leave the PC somewhere other than
+`addr + length`; these carry hand-audited lengths, matched on both opcode *and* mnemonic
+so that `$7c` is only treated as `JMP (abs,x)` on the CMOS parts where it is one.
+
+`JAM`/`KIL` needs an override for the opposite reason: it is the *emulator* that is
+wrong. Its `jam()` calls `imm()`, consuming a byte and leaving the PC at `addr+2`, while
+its own table declares `{jam, imp, 1}`. radare2 decodes `02 ea a9 42` as `hlt / nop /
+lda #$42`, confirming 1 byte.
+
+**Stated limitation:** the oracle shares the opcode *tables* with the disassembler, so a
+wrong table entry that both paths read identically would still be invisible. It catches
+disagreements between decoding and execution. Layers 2 and 3 cover the rest.
 
 ### Layer 2 — hand-audited golden strings
 
