@@ -40,7 +40,10 @@ uint8_t DisInstLen(uint8_t opcode);
  * bufSize > 0. Text longer than the buffer is truncated, not an error --
  * the returned address is still correct so a listing can continue.
  *
- * Returns the address of the next instruction, or 0 if not initialised.
+ * Returns the address of the next instruction, or 0 if DisInit has not
+ * been called. Note 0 is ambiguous: a 1-byte instruction at $FFFF also
+ * returns 0. Callers needing to tell them apart should check buf, which
+ * is left empty only on failure.
  */
 uint16_t DisOne(uint16_t addr, DisReadFn read, int bufSize, char* buf);
 
