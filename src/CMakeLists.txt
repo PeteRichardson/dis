@@ -28,5 +28,14 @@ endif()
 add_executable(test_memory test_memory.c memory.c memory.h)
 add_test(NAME memory COMMAND test_memory)
 
+add_executable(test_disassemble
+  test_disassemble.c
+  disassemble.c
+  disassemble.h
+  vrEmu6502.c
+  vrEmu6502.h
+)
+add_test(NAME disassemble COMMAND test_disassemble)
+
 
 
