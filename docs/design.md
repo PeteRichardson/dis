@@ -260,14 +260,25 @@ Resolved since the last revision:
   65,536-entry pointer table, 256 KB on the Pico. Needs a sorted symbol
   array with binary search.
 
+- ~~`BRK` length~~ — resolved as 2 bytes, rendering the signature byte as
+  an operand (`brk $ea`). The CPU pushes `addr+2` and skips that byte;
+  `brk()` in `vrEmu6502.c` models this correctly in execution while the
+  opcode table declares implied, i.e. length 1.
+
+  This deliberately diverges from da65 and radare2's native plugin, which
+  report 1 (Capstone reports 2). The deciding argument is that reporting 1
+  does not merely display the signature byte oddly — it *decodes* it. Given
+  `00 01 a9 42 a5 10`, length 1 produces `brk` / `ora ($a9, x)` /
+  `ldd #$a5` / `bpl $0207`: both real instructions are lost and the listing
+  never resynchronizes. A signature of `$ea` decodes as a harmless `nop`,
+  which is why the built-in demo hid this.
+
+  Cost: output no longer matches da65/r2 line-for-line on `BRK`, and
+  zero-filled regions render as half as many lines. Both are acceptable
+  against a debugger listing that stays in step with the CPU.
+
 Still open:
 
-- [ ] `BRK` is a 2-byte instruction — the CPU skips the signature byte,
-      and `vrEmu6502.c` models this correctly in execution — but the
-      disassembler reports 1, as do da65 and radare2's native plugin.
-      Capstone reports 2. Current behaviour follows the majority
-      convention; worth revisiting for a debugger where the listing should
-      match what the CPU actually does.
 - [ ] No output format options (e.g., ca65 syntax, DASM syntax).
 - [ ] Function discovery and REPL subcommands (`dis function list`).
 
