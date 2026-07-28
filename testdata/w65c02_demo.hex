@@ -1,0 +1,16 @@
+Intel HEX fixture for the end-to-end CLI test.
+readHexFile skips any line not starting with ':', so this header is ignored.
+
+Loads 10 bytes at $0200 exercising W65C02-only instructions:
+
+  0200  0f 12 05   bbr0 $12, $0208   3-byte zp,rel -- the length bug
+  0203  07 10      rmb0 $10
+  0205  1a         inc a             accumulator mode
+  0206  80 05      bra $020d
+  0208  b2 10      lda ($10)         zero page indirect
+
+On plain 65c02 the same bytes decode differently ($0f and $07 are NOPs
+there), so this also proves --cpu is wired up.
+
+:0A0200000F120507101A8005B21056
+:00000001FF
