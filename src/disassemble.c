@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 
 /*
  * One CPU handle for the lifetime of the module.
@@ -41,6 +42,32 @@ static bool disIsBitBranch(const char* mnemonic) {
         && mnemonic[0] == 'b'
         && mnemonic[1] == 'b'
         && (mnemonic[2] == 'r' || mnemonic[2] == 's');
+}
+
+/*
+ * Accumulator-mode instructions.
+ *
+ * vrEmu6502 never reports AddrModeAcc for anything: opcodeToAddrMode in
+ * vrEmu6502.c has no case for the acc addressing function, so those
+ * opcodes fall through to its closing "return AddrModeImp". Without this
+ * the operand is dropped and "inc a" prints as "inc", which reads as an
+ * absolute-mode instruction with a missing operand.
+ *
+ * The set is small and fixed. Mnemonics are checked too because $1a and
+ * $3a are NOPs on NMOS parts and only become INC A / DEC A on CMOS.
+ */
+static bool disIsAccumulator(uint8_t opcode, const char* mnemonic) {
+    if (!mnemonic) return false;
+
+    switch (opcode) {
+    case 0x0a: return strcmp(mnemonic, "asl") == 0;
+    case 0x2a: return strcmp(mnemonic, "rol") == 0;
+    case 0x4a: return strcmp(mnemonic, "lsr") == 0;
+    case 0x6a: return strcmp(mnemonic, "ror") == 0;
+    case 0x1a: return strcmp(mnemonic, "inc") == 0;
+    case 0x3a: return strcmp(mnemonic, "dec") == 0;
+    default:   return false;
+    }
 }
 
 void DisInit(vrEmu6502Model model) {
@@ -104,6 +131,9 @@ uint16_t DisOne(uint16_t addr, DisReadFn read, int bufSize, char* buf) {
         /* zp, rel -- the branch is relative to the following instruction */
         snprintf(operand, sizeof operand, "$%02x, $%04x",
                  arg8, (uint16_t)(addr + 3 + (int8_t)arg8b));
+    }
+    else if (disIsAccumulator(opcode, mnemonic)) {
+        snprintf(operand, sizeof operand, "a");
     }
     else switch (vrEmu6502GetOpcodeAddrMode(disCpu, opcode)) {
     case AddrModeAbs:
@@ -174,9 +204,15 @@ void DisRange(uint16_t addr, uint16_t len, DisReadFn read, DisEmitFn emit) {
         uint8_t bytes[3];
 
         uint16_t next = DisOne(pc, read, sizeof text, text);
-        if (next == 0) return;
 
+        /*
+         * Deliberately not "next == 0": a 1-byte instruction at $ffff
+         * returns 0 legitimately, which would drop the last line of a
+         * listing that runs to the top of memory. The length is the
+         * unambiguous check, and DisInit was already verified above.
+         */
         uint8_t n = (uint8_t)(next - pc);
+        if (n < 1 || n > 3) return;
         for (uint8_t i = 0; i < n; ++i)
             bytes[i] = read((uint16_t)(pc + i));
 
