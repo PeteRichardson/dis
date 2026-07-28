@@ -171,6 +171,20 @@ and confirming the suite fails. The canary caught the overflow that ASan
 did not — the write lands past the caller's `bufSize` but inside the
 test's stack array.
 
+**HEX loading.** `src/test_hexfile.c` covers the parser: single and
+multiple records, gaps between records, out-of-order records, comment
+lines, the EOF record halting the parse, a missing file, a file with no
+records, and the fact that checksums are never validated.
+
+Those are unit tests, and they map RAM themselves — so they would *not*
+have caught the bug that actually shipped, which was `dis.c` failing to
+map RAM before loading. That is guarded separately by the `cli_hexfile`
+test, which runs the built binary against `testdata/w65c02_demo.hex` and
+requires `bbr0` in the output while forbidding `brk`. If the mapping
+regresses, the file loads as zeros and every line becomes `brk`. Verified
+by removing the mapping: the unit tests still passed and `cli_hexfile`
+failed.
+
 ---
 
 ## Key Design Decisions

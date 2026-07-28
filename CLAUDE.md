@@ -41,9 +41,12 @@ This is a 6502 CPU disassembler written in C11. It uses the [vrEmu6502](https://
 - **`dis.c`** — Entry point. Parses `--cpu`, loads a program, calls `DisRange`. Owns all output formatting via its `DisEmitFn`.
 - **`disassemble.c/h`** — The shippable core: `DisInit`, `DisOne`, `DisRange`. Reaches memory only through a `DisReadFn` callback. `vrEmu6502Model` is sourced from `vrEmu6502.h` (not redefined here).
 - **`test_disassemble.c`** — Three-layer test suite. See `docs/design.md`.
+- **`test_hexfile.c`** — Intel HEX parser tests. Generates its own `.hex` files at run time.
 - **`memory.c/h`** — Sparse 6502 memory model. Up to 16 named regions (ROM, RAM, FILL) in a linear array; later regions shadow earlier ones. Host-side only.
 - **`hexfile.c/h`** — Intel HEX file reader. Parses records and writes bytes into the memory model via `MemWrite`.
 - **`vrEmu6502.c/h`** — Third-party 6502/65C02 emulator library (statically linked via `-DVR_EMU_6502_STATIC`).
+
+`testdata/` holds committed fixtures for tests that need a real file on disk — currently `w65c02_demo.hex`, used by the `cli_hexfile` end-to-end test. Tests that can generate their inputs do so at run time instead.
 
 ### What ships to the PicoComputer
 
