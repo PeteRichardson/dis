@@ -223,9 +223,10 @@ int main(int argc, char** argv) {
 
     if (AnalyzeOutOfRange(analysis))
         fprintf(stderr, "note: %u control-flow target%s outside the loaded "
-                        "range were not followed\n",
+                        "range %s not followed\n",
                 AnalyzeOutOfRange(analysis),
-                AnalyzeOutOfRange(analysis) == 1 ? "" : "s");
+                AnalyzeOutOfRange(analysis) == 1 ? "" : "s",
+                AnalyzeOutOfRange(analysis) == 1 ? "was" : "were");
 
     printAnalyzed(analysis, base, end, base);
     AnalyzeFree(analysis);
