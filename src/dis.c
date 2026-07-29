@@ -5,6 +5,7 @@
 #include "hexfile.h"
 #include "rp6502file.h"
 #include "disassemble.h"
+#include "analyze.h"
 
 static const uint8_t demo_image[] = {
     0x00,              // BRK
@@ -39,6 +40,59 @@ static void printInstruction(uint16_t addr, const uint8_t* bytes,
     printf("%-10s\n", text);
 }
 
+/*
+ * Function-organized listing. Walks the range in address order, emitting a
+ * label before any address that is a function or branch target, and
+ * collapsing runs of unreached bytes to a single marker.
+ *
+ * Unreached bytes are shown rather than dropped: the traversal has known
+ * blind spots (see analyze.h), so a reader must be able to see where it
+ * disagreed with them.
+ */
+static void printAnalyzed(const DisAnalysis* a, uint16_t lo, uint16_t hi,
+                          uint16_t entry) {
+    uint32_t addr = lo;
+
+    while (addr <= hi) {
+        if (!AnalyzeIsInstruction(a, (uint16_t)addr)) {
+            uint32_t start = addr;
+            while (addr <= hi && !AnalyzeIsInstruction(a, (uint16_t)addr))
+                ++addr;
+            printf("\n; %04x-%04x  %u bytes data\n",
+                   (unsigned)start, (unsigned)(addr - 1),
+                   (unsigned)(addr - start));
+            continue;
+        }
+
+        uint16_t at = (uint16_t)addr;
+
+        if (AnalyzeIsFunction(a, at)) {
+            unsigned callers = AnalyzeCallers(a, at);
+            printf("\nsub_%04x:", at);
+            if (at == entry)      printf("                  ; entry point");
+            else if (callers == 1) printf("                  ; 1 caller");
+            else                   printf("                  ; %u callers", callers);
+            printf("\n");
+        }
+        else if (AnalyzeIsLabel(a, at)) {
+            printf("loc_%04x:\n", at);
+        }
+
+        char text[48];
+        uint16_t next = DisOne(at, readByte, sizeof text, text);
+        uint8_t len = (uint8_t)(next - at);
+        if (len == 0 || len > 3) break;
+
+        uint8_t bytes[3];
+        for (uint8_t i = 0; i < len; ++i)
+            bytes[i] = readByte((uint16_t)(at + i));
+
+        printInstruction(at, bytes, len, text);
+
+        addr += len;
+    }
+}
+
 static const struct {
     const char*    name;
     vrEmu6502Model model;
@@ -66,6 +120,7 @@ static void usage(FILE* to) {
     fprintf(to, "  program: an Intel HEX file or an RP6502 ROM (.rp6502);\n");
     fprintf(to, "           the format is detected from the contents\n");
     fprintf(to, "  with no file, disassembles a small built-in demo program\n");
+    fprintf(to, "  --linear: flat sweep instead of following control flow\n");
 }
 
 int main(int argc, char** argv) {
@@ -73,6 +128,7 @@ int main(int argc, char** argv) {
        existing output is unchanged. */
     vrEmu6502Model model = CPU_65C02;
     const char* inputPath = NULL;
+    bool linear = false;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--cpu") == 0) {
@@ -85,6 +141,9 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--help") == 0) {
             usage(stdout);
             return 0;
+        }
+        else if (strcmp(argv[i], "--linear") == 0) {
+            linear = true;
         }
         else if (argv[i][0] == '-') {
             fprintf(stderr, "dis: unknown option '%s'\n", argv[i]);
@@ -99,6 +158,7 @@ int main(int argc, char** argv) {
     MemSetDefaultFill(0x00);
 
     uint16_t base, end;
+    bool haveEntry = false;
     if (inputPath) {
         /*
          * Both readers write through MemWrite, which silently drops writes
@@ -121,6 +181,7 @@ int main(int argc, char** argv) {
 
             base = rom.entry;
             end = rom.end;
+            haveEntry = true;
 
             /* Notes go to stderr so the listing itself stays pipeable. */
             if (rom.xramChunks)
@@ -134,6 +195,7 @@ int main(int argc, char** argv) {
         else {
             base = readHexFile(inputPath, &end);
             if (base == 0) return 1;
+            haveEntry = true;
         }
     }
     else {
@@ -143,7 +205,29 @@ int main(int argc, char** argv) {
     }
 
     DisInit(model);
-    DisRange(base, (uint16_t)(end - base + 1), readByte, printInstruction);
 
+    if (linear || !haveEntry) {
+        DisRange(base, (uint16_t)(end - base + 1), readByte, printInstruction);
+        return 0;
+    }
+
+    DisAnalysis* analysis = AnalyzeNew(readByte, base, end);
+    if (!analysis) {
+        fprintf(stderr, "dis: out of memory; falling back to linear\n");
+        DisRange(base, (uint16_t)(end - base + 1), readByte, printInstruction);
+        return 0;
+    }
+
+    AnalyzeAddEntry(analysis, base);
+    AnalyzeRun(analysis);
+
+    if (AnalyzeOutOfRange(analysis))
+        fprintf(stderr, "note: %u control-flow target%s outside the loaded "
+                        "range were not followed\n",
+                AnalyzeOutOfRange(analysis),
+                AnalyzeOutOfRange(analysis) == 1 ? "" : "s");
+
+    printAnalyzed(analysis, base, end, base);
+    AnalyzeFree(analysis);
     return 0;
 }
