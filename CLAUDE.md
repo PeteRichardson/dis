@@ -40,7 +40,7 @@ This is a 6502 CPU disassembler written in C11. It uses the [vrEmu6502](https://
 
 ### Source files (`src/`)
 
-- **`dis.c`** — Entry point. Parses `--cpu`, loads a program, calls `DisRange`. Owns all output formatting via its `DisEmitFn`.
+- **`dis.c`** — Entry point. Parses `--cpu`, loads a program, then runs `AnalyzeNew` → `AnalyzeRun` → `printAnalyzed` by default; `--linear` (or no known entry point) falls back to a flat `DisRange` sweep. Owns all output formatting.
 - **`disassemble.c/h`** — The shippable core: `DisInit`, `DisOne`, `DisRange`. Reaches memory only through a `DisReadFn` callback. `vrEmu6502Model` is sourced from `vrEmu6502.h` (not redefined here).
 - **`analyze.c/h`** — Recursive-descent code/data analysis. Depends only on `disassemble.h`. See `docs/design.md`.
 - **`test_analyze.c`** — Analysis tests. Hand-assembled programs with known control flow.
@@ -52,7 +52,7 @@ This is a 6502 CPU disassembler written in C11. It uses the [vrEmu6502](https://
 - **`hexfile.c/h`** — Intel HEX file reader. Parses records and writes bytes into the memory model via `MemWrite`.
 - **`vrEmu6502.c/h`** — Third-party 6502/65C02 emulator library (statically linked via `-DVR_EMU_6502_STATIC`).
 
-`testdata/` holds committed fixtures for tests that need a real file on disk — `w65c02_demo.hex` and `w65c02_demo.rp6502` for the `cli_hexfile`, `cli_rp6502` and `cli_linear` end-to-end tests, and two real PicoComputer ROMs, `adventure.rp6502` and `rtc.rp6502`, for `cli_adventure_rom`, `cli_adventure_data` and `cli_rtc_rom`. Tests that can generate their inputs do so at run time instead.
+`testdata/` holds committed fixtures for tests that need a real file on disk — `w65c02_demo.hex` for `cli_hexfile` and `cli_linear`, `w65c02_demo.rp6502` for `cli_rp6502`, and two real PicoComputer ROMs, `adventure.rp6502` and `rtc.rp6502`, for `cli_adventure_rom`, `cli_adventure_data` and `cli_rtc_rom`. Tests that can generate their inputs do so at run time instead.
 
 ### What ships to the PicoComputer
 
