@@ -10,11 +10,7 @@
 They are real toolchain output, which synthetic fixtures cannot substitute for:
 `adventure.rp6502` carries 49 chunks, large ASCII blobs and 4 named assets.
 
-Those files are covered by the rp6502 project's BSD 3-Clause licence:
-
-> Copyright (c) 2023 Rumbledethumps
->
-> Redistribution and use in source and binary forms, with or without
-> modification, are permitted provided that the conditions of the BSD
-> 3-Clause License are met. See https://github.com/picocomputer/rp6502
-> for the full text.
+Those files are covered by the rp6502 project's BSD 3-Clause licence
+(copyright 2026, Rumbledethumps). The notice, list of conditions, and
+disclaimer required by that licence are retained verbatim, unmodified from
+upstream, in [`LICENSE.rp6502`](LICENSE.rp6502).
