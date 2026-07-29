@@ -68,6 +68,17 @@ add_executable(test_rp6502file
 )
 add_test(NAME rp6502file COMMAND test_rp6502file)
 
+add_executable(test_analyze
+  test_analyze.c
+  analyze.c
+  analyze.h
+  disassemble.c
+  disassemble.h
+  vrEmu6502.c
+  vrEmu6502.h
+)
+add_test(NAME analyze COMMAND test_analyze)
+
 # End-to-end guard for .rp6502 support. The fixture's reset vector points
 # at $0205 rather than the load address, so requiring the listing to start
 # there proves the entry point came from the vector and not from the first
