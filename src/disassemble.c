@@ -256,3 +256,64 @@ void DisRange(uint16_t addr, uint16_t len, DisReadFn read, DisEmitFn emit) {
         pc = next;
     }
 }
+
+DisFlow DisFlowOf(uint16_t addr, DisReadFn read, uint16_t* target) {
+    if (!disCpu || !read) return DisFlowNormal;
+
+    uint8_t opcode = read(addr);
+    const char* mnemonic = vrEmu6502OpcodeToMnemonicStr(disCpu, opcode);
+    if (!mnemonic) return DisFlowNormal;
+
+    /* BBR0-7 / BBS0-7: 3 bytes, displacement is the third. Conditional,
+       so the following instruction is reachable too. */
+    if (disIsBitBranch(mnemonic)) {
+        if (target)
+            *target = (uint16_t)(addr + 3 + (int8_t)read((uint16_t)(addr + 2)));
+        return DisFlowBranch;
+    }
+
+    switch (opcode) {
+    case 0x20: /* jsr abs */
+        if (target)
+            *target = (uint16_t)(read((uint16_t)(addr + 1)) |
+                                 ((uint16_t)read((uint16_t)(addr + 2)) << 8));
+        return DisFlowCall;
+
+    case 0x4c: /* jmp abs */
+        if (target)
+            *target = (uint16_t)(read((uint16_t)(addr + 1)) |
+                                 ((uint16_t)read((uint16_t)(addr + 2)) << 8));
+        return DisFlowJump;
+
+    case 0x6c: /* jmp (abs)   */
+    case 0x7c: /* jmp (abs,x) */
+        /* $7c is an undefined opcode on NMOS parts, where it is not a jump. */
+        return (strcmp(mnemonic, "jmp") == 0) ? DisFlowIndirect : DisFlowNormal;
+
+    case 0x80: /* bra: unconditional, so nothing falls through to the next
+                  instruction -- classify as a jump, not a branch. */
+        if (strcmp(mnemonic, "bra") != 0) return DisFlowNormal; /* NMOS: undefined */
+        if (target)
+            *target = (uint16_t)(addr + 2 + (int8_t)read((uint16_t)(addr + 1)));
+        return DisFlowJump;
+
+    case 0x10: case 0x30: case 0x50: case 0x70:   /* bpl bmi bvc bvs */
+    case 0x90: case 0xb0: case 0xd0: case 0xf0:   /* bcc bcs bne beq */
+        if (target)
+            *target = (uint16_t)(addr + 2 + (int8_t)read((uint16_t)(addr + 1)));
+        return DisFlowBranch;
+
+    case 0x00: /* brk: vectors away; do not try to follow */
+    case 0x40: /* rti */
+    case 0x60: /* rts */
+        return DisFlowReturn;
+
+    case 0xdb: /* stp on CMOS; undefined elsewhere */
+        return (strcmp(mnemonic, "stp") == 0) ? DisFlowReturn : DisFlowNormal;
+
+    default:
+        /* Undocumented NMOS JAM/KIL halts the CPU. */
+        if (strcmp(mnemonic, "jam") == 0) return DisFlowReturn;
+        return DisFlowNormal;
+    }
+}
