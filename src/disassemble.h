@@ -58,4 +58,25 @@ uint16_t DisOne(uint16_t addr, DisReadFn read, int bufSize, char* buf);
  */
 void DisRange(uint16_t addr, uint16_t len, DisReadFn read, DisEmitFn emit);
 
+/*
+ * What an instruction does to control flow. Used to drive a
+ * recursive-descent traversal; see analyze.c.
+ */
+typedef enum {
+    DisFlowNormal,   /* falls through to the next instruction */
+    DisFlowCall,     /* JSR: *target is a function entry, execution resumes after */
+    DisFlowJump,     /* unconditional: *target is queued, this trace ends */
+    DisFlowBranch,   /* conditional: *target is queued AND this trace continues */
+    DisFlowReturn,   /* RTS/RTI/BRK/STP/JAM: this trace ends, no target */
+    DisFlowIndirect, /* JMP (abs) / JMP (abs,x): trace ends, target unknowable */
+} DisFlow;
+
+/*
+ * Classify the instruction at addr. *target is written only for Call,
+ * Jump and Branch, and is left untouched otherwise.
+ *
+ * Returns DisFlowNormal if DisInit has not been called.
+ */
+DisFlow DisFlowOf(uint16_t addr, DisReadFn read, uint16_t* target);
+
 #endif

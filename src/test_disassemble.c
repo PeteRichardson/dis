@@ -484,12 +484,63 @@ static void test_range(void) {
     printf("layer 3: DisRange boundaries checked\n");
 }
 
+static void test_flow_classification(void) {
+    DisInit(CPU_W65C02);
+
+    static const struct {
+        uint8_t     bytes[3];
+        DisFlow     flow;
+        uint16_t    target;   /* ignored when the flow has no target */
+        const char* what;
+    } cases[] = {
+        { { 0xea },             DisFlowNormal,   0x0000, "nop" },
+        { { 0xa9, 0x42 },       DisFlowNormal,   0x0000, "lda #$42" },
+        { { 0x20, 0x34, 0x12 }, DisFlowCall,     0x1234, "jsr $1234" },
+        { { 0x4c, 0x34, 0x12 }, DisFlowJump,     0x1234, "jmp $1234" },
+        { { 0x6c, 0x34, 0x12 }, DisFlowIndirect, 0x0000, "jmp ($1234)" },
+        { { 0x7c, 0x34, 0x12 }, DisFlowIndirect, 0x0000, "jmp ($1234,x)" },
+        { { 0x60 },             DisFlowReturn,   0x0000, "rts" },
+        { { 0x40 },             DisFlowReturn,   0x0000, "rti" },
+        { { 0x00, 0xea },       DisFlowReturn,   0x0000, "brk" },
+        { { 0xdb },             DisFlowReturn,   0x0000, "stp" },
+        /* conditional: queue the target AND fall through */
+        { { 0xd0, 0x05 },       DisFlowBranch,   0x1007, "bne +5" },
+        { { 0xd0, 0xfe },       DisFlowBranch,   0x1000, "bne -2" },
+        /* BRA is unconditional on 65C02: a jump, not a branch */
+        { { 0x80, 0x05 },       DisFlowJump,     0x1007, "bra +5" },
+        /* BBR/BBS are 3-byte conditional branches: target is addr+3+rel */
+        { { 0x0f, 0x12, 0x05 }, DisFlowBranch,   0x1008, "bbr0 $12,+5" },
+        { { 0x8f, 0x12, 0xfd }, DisFlowBranch,   0x1000, "bbs0 $12,-3" },
+    };
+
+    for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; ++i) {
+        memset(mem, 0, sizeof mem);
+        memcpy(&mem[TEST_ADDR], cases[i].bytes, 3);
+
+        uint16_t target = 0xffff;
+        DisFlow flow = DisFlowOf(TEST_ADDR, disRead, &target);
+
+        CHECK(flow == cases[i].flow,
+              "flow %s: got %d, expected %d", cases[i].what, flow, cases[i].flow);
+
+        if (cases[i].flow == DisFlowCall || cases[i].flow == DisFlowJump ||
+            cases[i].flow == DisFlowBranch)
+            CHECK(target == cases[i].target,
+                  "flow %s: target $%04x, expected $%04x",
+                  cases[i].what, target, cases[i].target);
+    }
+
+    printf("flow: %zu classifications checked\n",
+           sizeof cases / sizeof cases[0]);
+}
+
 int main(void) {
     test_instruction_lengths();
     test_golden_strings();
     test_buffer_truncation();
     test_relative_wrap();
     test_range();
+    test_flow_classification();
 
     if (failures) {
         printf("%d failure(s)\n", failures);
