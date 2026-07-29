@@ -100,3 +100,22 @@ set_tests_properties(cli_linear PROPERTIES
   PASS_REGULAR_EXPRESSION "0200: 0f 12 05  bbr0"
   FAIL_REGULAR_EXPRESSION "sub_")
 
+# Real toolchain output. Assertions are structural, not exact-output:
+# exact listings would be brittle and would encode current behaviour as if
+# it were correct.
+add_test(NAME cli_rtc_rom
+  COMMAND dis ${CMAKE_SOURCE_DIR}/testdata/rtc.rp6502)
+set_tests_properties(cli_rtc_rom PROPERTIES
+  FAIL_REGULAR_EXPRESSION "ERROR")
+
+# adventure.rp6502 is 49KB of real code and ASCII data. Requiring both a
+# discovered function and a data region proves the traversal actually
+# separated the two -- classifying everything one way means it is broken.
+# Measured 2026-07-29: 242 functions discovered, 15794 bytes classified as data
+# out of 48990. A large change in either direction is worth investigating.
+add_test(NAME cli_adventure_rom
+  COMMAND dis ${CMAKE_SOURCE_DIR}/testdata/adventure.rp6502)
+set_tests_properties(cli_adventure_rom PROPERTIES
+  PASS_REGULAR_EXPRESSION "sub_"
+  FAIL_REGULAR_EXPRESSION "ERROR")
+
