@@ -43,10 +43,14 @@ memory access routines.
 
 ## Architecture
 
-The program is a thin pipeline: load → map → decode → print. There is
-no persistent state beyond the memory regions and the CPU instance.
+The program is a thin pipeline: load → map → decode → print. With an
+entry point known, an analysis pass runs between map and decode by
+default — load → map → analyze → decode → print — separating code from
+data before anything is formatted; `--linear` skips it and falls back to
+the plain pipeline. There is no persistent state beyond the memory
+regions, the CPU instance, and (when analysis runs) the flags array.
 
-The source files divide cleanly into three layers:
+The source files divide cleanly into four layers:
 
 **Input** (`hexfile.c`, `rp6502file.c`) parses a program file and writes
 the raw bytes into the memory model, returning the address to start from
@@ -60,6 +64,12 @@ typical 6502 program), it maintains an array of up to 16 named regions —
 ROM, RAM, or constant FILL. `MemRead` and `MemWrite` are plain C
 functions passed as callbacks to the CPU emulator; the emulator never
 touches the memory directly.
+
+**Analysis** (`analyze.c`) runs between Memory and Decode when an entry
+point is known and `--linear` is not given. It walks control flow over
+the mapped memory and marks every byte it reaches, so the decode step
+below can separate code from data and group the listing by function
+instead of just marching through addresses in order.
 
 **Decode and output** (`dis.c`, `disassemble.c`, `vrEmu6502.c`) drive
 the disassembly loop. `dis.c` holds `main` and the top-level loop.
