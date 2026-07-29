@@ -328,8 +328,9 @@ record's load address is the conventional approach for 6502 toolchains.
 
 ## Configuration and Environment
 
-No environment variables or config files. The CPU model is hardcoded as
-`CPU_65C02` in `dis.c`. Build requires CMake ≥ 3.16 and a C11 compiler.
+No environment variables or config files. The CPU model defaults to
+`CPU_65C02` in `dis.c` but is selectable with `--cpu`. Build requires
+CMake ≥ 3.16 and a C11 compiler.
 A pre-configured Ninja build tree lives in `build/`.
 
 ---

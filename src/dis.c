@@ -89,6 +89,15 @@ static void printAnalyzed(const DisAnalysis* a, uint16_t lo, uint16_t hi,
 
         printInstruction(at, bytes, len, text);
 
+        /* AnalyzeRun can mark two overlapping addresses as instruction
+           starts (e.g. the 6502 "BIT-skip" idiom). This walk only emits
+           the first, so call out any start it steps over rather than
+           silently dropping it and its label. */
+        for (uint8_t i = 1; i < len; ++i)
+            if (AnalyzeIsInstruction(a, (uint16_t)(at + i)))
+                printf("; %04x is also an instruction start (overlapping decode)\n",
+                       (unsigned)(at + i));
+
         addr += len;
     }
 }
