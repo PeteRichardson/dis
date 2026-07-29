@@ -25,6 +25,7 @@ The binary lands at `build/bin/dis`.
 ./build/bin/dis prog.hex               # disassemble an Intel HEX file
 ./build/bin/dis game.rp6502            # ...or an RP6502 ROM (format sniffed, not by extension)
 ./build/bin/dis --cpu w65c02 prog.hex  # 6502, 6502u, 65c02 (default), w65c02, r65c02
+./build/bin/dis --linear game.rp6502   # flat sweep, no control-flow analysis
 ```
 
 ## Test
@@ -41,6 +42,8 @@ This is a 6502 CPU disassembler written in C11. It uses the [vrEmu6502](https://
 
 - **`dis.c`** — Entry point. Parses `--cpu`, loads a program, calls `DisRange`. Owns all output formatting via its `DisEmitFn`.
 - **`disassemble.c/h`** — The shippable core: `DisInit`, `DisOne`, `DisRange`. Reaches memory only through a `DisReadFn` callback. `vrEmu6502Model` is sourced from `vrEmu6502.h` (not redefined here).
+- **`analyze.c/h`** — Recursive-descent code/data analysis. Depends only on `disassemble.h`. See `docs/design.md`.
+- **`test_analyze.c`** — Analysis tests. Hand-assembled programs with known control flow.
 - **`test_disassemble.c`** — Three-layer test suite. See `docs/design.md`.
 - **`test_hexfile.c`** — Intel HEX parser tests. Generates its own `.hex` files at run time.
 - **`memory.c/h`** — Sparse 6502 memory model. Up to 16 named regions (ROM, RAM, FILL) in a linear array; later regions shadow earlier ones. Host-side only.
@@ -49,7 +52,7 @@ This is a 6502 CPU disassembler written in C11. It uses the [vrEmu6502](https://
 - **`hexfile.c/h`** — Intel HEX file reader. Parses records and writes bytes into the memory model via `MemWrite`.
 - **`vrEmu6502.c/h`** — Third-party 6502/65C02 emulator library (statically linked via `-DVR_EMU_6502_STATIC`).
 
-`testdata/` holds committed fixtures for tests that need a real file on disk — currently `w65c02_demo.hex` and `w65c02_demo.rp6502`, used by the `cli_hexfile` and `cli_rp6502` end-to-end tests. Tests that can generate their inputs do so at run time instead.
+`testdata/` holds committed fixtures for tests that need a real file on disk — `w65c02_demo.hex` and `w65c02_demo.rp6502` for the `cli_hexfile`, `cli_rp6502` and `cli_linear` end-to-end tests, and two real PicoComputer ROMs, `adventure.rp6502` and `rtc.rp6502`, for `cli_adventure_rom`, `cli_adventure_data` and `cli_rtc_rom`. Tests that can generate their inputs do so at run time instead.
 
 ### What ships to the PicoComputer
 
@@ -61,3 +64,4 @@ Note `vrEmu6502New` does **not** allocate 64 KiB — it mallocs one struct, ~1KB
 
 - `MemWrite` silently drops writes to unmapped addresses. Anything writing into the memory model must map a region first.
 - Three decode bugs live upstream in `vrEmu6502.c` and are worked around in `disassemble.c`: `BBR`/`BBS` declared as 2-byte zero page when they are 3-byte `zp,rel`; `AddrModeAcc` never returned by `opcodeToAddrMode`; `JAM` advancing the PC by 2 during execution while its table says 1.
+- The analysis has inherent blind spots on 6502: `JSR` with inline data, jump tables and the `RTS` dispatch trick, and self-modifying code. `src/test_analyze.c` documents the first as wrong-but-expected — flip that assertion rather than deleting it if it is ever fixed.

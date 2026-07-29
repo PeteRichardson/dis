@@ -24,6 +24,7 @@ access routines and none of the host-side scaffolding goes with it.
 ./build/bin/dis prog.hex                 # disassemble an Intel HEX file
 ./build/bin/dis game.rp6502              # ...or an RP6502 ROM
 ./build/bin/dis --cpu w65c02 prog.hex    # the RP6502's actual CPU
+./build/bin/dis --linear game.rp6502     # flat sweep, no control-flow analysis
 ctest --test-dir build                   # 1300+ assertions
 ```
 
@@ -58,6 +59,30 @@ Three behaviours worth knowing:
   reader, which ignores its checksums.
 
 Notes go to stderr, so the listing on stdout stays pipeable.
+
+### Code vs data
+
+A ROM is a memory image, not a code section, so a flat sweep decodes ASCII and
+tables as instructions. `dis` follows control flow from the entry point instead,
+marking what it reaches as code. Anything unreached is shown as a data marker:
+
+    sub_0205:                  ; entry point
+    0205: 1a        inc a
+    0206: 20 30 02  jsr $0230
+
+    ; 0210-022f  32 bytes data
+
+Function entries come from `JSR` targets, so they carry a caller count. Branch
+targets get `loc_XXXX` labels.
+
+Three things this cannot see, inherent to the technique on 6502: `JSR` followed
+by inline data (decoded as code), jump tables and the `RTS` dispatch trick (real
+code that looks unreachable), and self-modifying code. Unreached bytes are shown
+rather than dropped so you can spot the disagreement, and `--linear` always
+gives the unfiltered sweep.
+
+No `.rp6502` carries symbols, so labels are synthetic. Real names need a build
+artifact — see issue #5.
 
 ### Two things I had wrong
 

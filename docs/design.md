@@ -30,11 +30,12 @@ memory access routines.
 - Keep the shippable surface to `disassemble.c/h` + `vrEmu6502.c/h`, with
   no dependency on the host-side memory model or file loading
 - Accept an Intel HEX file or an RP6502 ROM on the host for convenience
+- Separate code from data by following control flow from the entry point,
+  organizing the listing by function; `--linear` falls back to a flat sweep
 
 **Non-Goals:**
 - Execution or emulation — the CPU instance exists only to drive opcode
   decoding, not to run code
-- Control-flow-aware disassembly — the current loop is strictly linear
 - Symbol/label resolution — `labelMap` is wired up but always `NULL`
 - Writing back or patching the binary
 
@@ -129,6 +130,24 @@ opcode tables declare them plain zero page, which would report length 2
 for a 3-byte instruction. Accumulator mode is never reported at all —
 `opcodeToAddrMode` has no case for the `acc` addressing function, so those
 opcodes fall through to `AddrModeImp`.
+
+**`analyze.c`**
+Recursive-descent traversal. Seeded with entry points, it follows control
+flow and marks every byte reached in a flat `uint8_t flags[0x10000]`;
+whatever is unreached is data. Marking an address as queued before pushing
+it means each enters the worklist at most once, so the traversal terminates
+on any input. Targets outside the loaded range are counted, not followed.
+
+Depends only on `disassemble.h` — never `memory.c` or the file readers — so
+it keeps the same portability shape as `disassemble.c`. Host-side for now; a
+Pico port would pack the flags into an 8KB bitmap plus a small function
+table.
+
+Control-flow classification lives in `disassemble.c` as `DisFlowOf`, because
+the `VrEmu6502*` handle needed for mnemonic lookup is private there. Two
+classifications are easy to get wrong: `BRA` is unconditional, so nothing
+falls through to the next instruction, and `BBR`/`BBS` are 3-byte
+conditional branches whose displacement is the third byte.
 
 **`vrEmu6502.c/h`**
 Third-party 6502/65C02 emulator by Troy Schrapel (vrEmu6502). Linked
@@ -339,10 +358,16 @@ Resolved since the last revision:
   zero-filled regions render as half as many lines. Both are acceptable
   against a debugger listing that stays in step with the CPU.
 
+- ~~Function discovery~~ — `analyze.c`'s recursive-descent traversal finds
+  function entries from `JSR` targets and organizes the listing by
+  function, on by default; `--linear` gives the old flat sweep. See the
+  `analyze.c` entry under Components.
+
 Still open:
 
 - [ ] No output format options (e.g., ca65 syntax, DASM syntax).
-- [ ] Function discovery and REPL subcommands (`dis function list`).
+- [ ] REPL subcommands (`dis function list` as an interactive PicoComputer
+  command, distinct from the discovery itself, which is resolved above).
 
 ---
 
@@ -353,3 +378,4 @@ Still open:
 | 2026-06-25 | Initial document generated from codebase |
 | 2026-07-28 | RP6502 ROM (`.rp6502`) support: content-based format detection, XRAM chunks skipped, reset vector as entry point, CRC-32 validation. |
 | 2026-07-28 | Callback API (`DisInit`/`DisOne`/`DisRange`), three-layer test harness, `--cpu` flag. Corrected the claim that vrEmu6502 allocates 64 KiB. Recorded the HEX-loading and upstream decode defects. |
+| 2026-07-29 | Recursive-descent code/data analysis, function discovery, function-organized listing, `--linear`. Real ROM fixtures vendored from picocomputer/rp6502. |
