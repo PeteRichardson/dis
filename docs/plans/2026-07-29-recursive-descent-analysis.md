@@ -736,15 +736,20 @@ wrong-but-expected, so a future fix has an assertion to flip."
 
 ---
 
-### Task 3: Function-organized listing
+### Task 3: Function-organized listing, wired into the CLI
+
+Renderer and wiring are one task deliberately: a `static` renderer that nothing
+calls yet would trip `-Wunused-function` and violate the warning-free Global
+Constraint, and would have no test of its own. Written and used together, it
+ends the task behind real CTest gates.
 
 **Files:**
 - Modify: `src/dis.c`
-- Test: covered end-to-end by Task 4's CLI tests; no unit test file (rendering is presentation, exercised through the binary)
+- Modify: `src/CMakeLists.txt`
 
 **Interfaces:**
-- Consumes: `AnalyzeIsInstruction`, `AnalyzeIsFunction`, `AnalyzeIsLabel`, `AnalyzeCallers` from `src/analyze.h`; `DisOne` from `src/disassemble.h`.
-- Produces: `static void printAnalyzed(const DisAnalysis*, uint16_t lo, uint16_t hi, uint16_t entry)` used by Task 4.
+- Consumes: `AnalyzeNew`, `AnalyzeAddEntry`, `AnalyzeRun`, `AnalyzeFree`, `AnalyzeIsInstruction`, `AnalyzeIsFunction`, `AnalyzeIsLabel`, `AnalyzeCallers`, `AnalyzeOutOfRange` from `src/analyze.h`; `DisOne`, `DisRange` from `src/disassemble.h`.
+- Produces: the `--linear` flag and analysis-by-default behaviour. Task 4 (fixtures) exercises both.
 
 - [ ] **Step 1: Add the renderer**
 
@@ -805,41 +810,7 @@ static void printAnalyzed(const DisAnalysis* a, uint16_t lo, uint16_t hi,
 }
 ```
 
-- [ ] **Step 2: Build to verify it compiles**
-
-```bash
-cmake --build build 2>&1 | grep -iE 'warning|error' ; echo done
-```
-
-Expected: no warnings, no errors. (`printAnalyzed` is unused until Task 4, which will warn — if `-Wunused-function` fires, proceed straight to Task 4 rather than adding a suppression.)
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/dis.c
-git commit -m "feat(dis): function-organized listing renderer
-
-Emits sub_XXXX: for functions and loc_XXXX: for branch targets, and
-collapses runs of unreached bytes to a one-line marker showing their
-extent. Unreached bytes are shown rather than dropped so a reader can see
-where the analysis disagreed with them.
-
-Not yet wired into main; that follows."
-```
-
----
-
-### Task 4: Wire analysis into the CLI
-
-**Files:**
-- Modify: `src/dis.c`
-- Modify: `src/CMakeLists.txt`
-
-**Interfaces:**
-- Consumes: `printAnalyzed` from Task 3; `AnalyzeNew`/`AddEntry`/`Run`/`Free`/`OutOfRange` from Task 2.
-- Produces: `--linear` flag; analysis-by-default behaviour.
-
-- [ ] **Step 1: Add the flag and dispatch**
+- [ ] **Step 2: Add the flag and dispatch**
 
 In `src/dis.c`, add near `const char* inputPath = NULL;`:
 
@@ -901,7 +872,7 @@ Add `bool haveEntry` alongside `base`/`end`, set `true` in the ROM and HEX branc
 
 Set `haveEntry = true;` immediately after each successful `readRp6502File` and `readHexFile` call. Leave it `false` in the `else` branch that maps `demo_image`, so `./dis` with no arguments keeps its current output.
 
-- [ ] **Step 2: Verify the demo output is unchanged**
+- [ ] **Step 3: Verify the demo output is unchanged**
 
 ```bash
 cmake --build build
@@ -910,7 +881,7 @@ cmake --build build
 
 Expected: identical to today — six lines starting `0200: 00 ea     brk $ea`.
 
-- [ ] **Step 3: Verify --linear is unchanged**
+- [ ] **Step 4: Verify --linear is unchanged**
 
 ```bash
 ./build/bin/dis --linear --cpu w65c02 testdata/w65c02_demo.hex
@@ -919,7 +890,7 @@ Expected: identical to today — six lines starting `0200: 00 ea     brk $ea`.
 
 Expected: the first matches today's output exactly. The second shows labels and may classify some bytes as data.
 
-- [ ] **Step 4: Add a CLI regression test**
+- [ ] **Step 5: Add a CLI regression test**
 
 In `src/CMakeLists.txt`, after the `cli_rp6502` block:
 
@@ -934,7 +905,7 @@ set_tests_properties(cli_linear PROPERTIES
   FAIL_REGULAR_EXPRESSION "sub_")
 ```
 
-- [ ] **Step 5: Run the full suite**
+- [ ] **Step 6: Run the full suite**
 
 ```bash
 cmake -B build -G Ninja && cmake --build build && ctest --test-dir build --output-on-failure
@@ -942,11 +913,16 @@ cmake -B build -G Ninja && cmake --build build && ctest --test-dir build --outpu
 
 Expected: all PASS. If `cli_rp6502` fails, read its output before changing it — its `PASS_REGULAR_EXPRESSION` is `0205: `, which the analyzed listing should still produce since `$0205` is the reset vector and therefore the entry point.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/dis.c src/CMakeLists.txt
-git commit -m "feat(dis): analyse by default, add --linear
+git commit -m "feat(dis): function-organized listing, analyse by default
+
+Emits sub_XXXX: for functions and loc_XXXX: for branch targets, and
+collapses runs of unreached bytes to a one-line marker showing their
+extent. Unreached bytes are shown rather than dropped so a reader can see
+where the analysis disagreed with them.
 
 Files with a known entry point now get the function-organized listing;
 --linear selects the previous flat sweep. The built-in demo has no entry
@@ -958,7 +934,7 @@ likely to rot unnoticed."
 
 ---
 
-### Task 5: Real ROM fixtures
+### Task 4: Real ROM fixtures
 
 **Files:**
 - Create: `testdata/rtc.rp6502`
@@ -1078,7 +1054,7 @@ two; classifying everything one way would mean it is broken."
 
 ---
 
-### Task 6: Documentation
+### Task 5: Documentation
 
 **Files:**
 - Modify: `README.md`
@@ -1209,10 +1185,10 @@ are shown rather than dropped. Notes that labels are synthetic because no
 
 ## Self-Review Notes
 
-**Spec coverage.** Every section of `docs/specs/2026-07-29-recursive-descent-analysis-design.md` maps to a task: traversal rules → Tasks 1–2; module boundary and API → Task 2; two label kinds → Tasks 2–3; default-on with `--linear` → Task 4; collapsed data regions → Task 3; real ROM fixtures with measured figures → Task 5; blind spots documented → Tasks 2 and 6. Out-of-scope items (`--data`/`--code` overrides, symbols, call-graph output) have no tasks, as intended.
+**Spec coverage.** Every section of `docs/specs/2026-07-29-recursive-descent-analysis-design.md` maps to a task: traversal rules → Tasks 1–2; module boundary and API → Task 2; two label kinds → Tasks 2–3; default-on with `--linear`, collapsed data regions → Task 3; real ROM fixtures with measured figures → Task 4; blind spots documented → Tasks 2 and 5. Out-of-scope items (`--data`/`--code` overrides, symbols, call-graph output) have no tasks, as intended.
 
-**Deliberate omission.** Task 5 Step 2 measures the function count and data byte total before Step 3 writes them into a comment. No number is invented anywhere in this plan; the spec explicitly forbids picking one in advance.
+**Deliberate omission.** Task 4 Step 2 measures the function count and data byte total before Step 3 writes them into a comment. No number is invented anywhere in this plan; the spec explicitly forbids picking one in advance.
 
-**Known risk.** Task 3's `printAnalyzed` is unused until Task 4, so a `-Wunused-function` warning between those two commits is expected. The plan says to proceed to Task 4 rather than suppress it, because the repo builds warning-free and adding a suppression would outlive its reason.
+**Resolved before execution.** The renderer and its CLI wiring were originally split across two tasks, which would have committed a `static` function nothing called — tripping `-Wunused-function` against the warning-free Global Constraint, and leaving that task with no test of its own. They are now one task. Five tasks total.
 
 **Fixed during self-review.** Two hand-assembled test programs in Task 2 had addresses that did not line up with their byte offsets: `test_branch_and_jump` had a branch targeting the middle of a 3-byte `JMP`, and `test_jsr_inline_data_is_misread` had a 7-byte gap where the `JSR` target required 10. Both are corrected above. Anyone hand-assembling further cases should count offsets rather than trust the comments.
