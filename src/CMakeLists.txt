@@ -2,12 +2,14 @@ cmake_minimum_required(VERSION 3.16)
 
 include(CheckSymbolExists)
 
-add_executable (dis 
+add_executable (dis
   dis.c
   memory.c
   memory.h
   disassemble.c
   disassemble.h
+  analyze.c
+  analyze.h
   hexfile.c
   hexfile.h
   rp6502file.c
@@ -89,5 +91,12 @@ set_tests_properties(cli_rp6502 PROPERTIES
   PASS_REGULAR_EXPRESSION "0205: "
   FAIL_REGULAR_EXPRESSION "ERROR")
 
-
+# --linear must keep the pre-analysis behaviour exactly. bbr0 at $0200 is
+# the first instruction of the fixture, so it only appears in a flat sweep
+# from the load address -- the analyzed listing starts at the reset vector.
+add_test(NAME cli_linear
+  COMMAND dis --linear --cpu w65c02 ${CMAKE_SOURCE_DIR}/testdata/w65c02_demo.hex)
+set_tests_properties(cli_linear PROPERTIES
+  PASS_REGULAR_EXPRESSION "0200: 0f 12 05  bbr0"
+  FAIL_REGULAR_EXPRESSION "sub_")
 
