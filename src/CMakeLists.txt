@@ -108,14 +108,24 @@ add_test(NAME cli_rtc_rom
 set_tests_properties(cli_rtc_rom PROPERTIES
   FAIL_REGULAR_EXPRESSION "ERROR")
 
-# adventure.rp6502 is 49KB of real code and ASCII data. Requiring both a
-# discovered function and a data region proves the traversal actually
-# separated the two -- classifying everything one way means it is broken.
-# Measured 2026-07-29: 242 functions discovered, 15794 bytes classified as data
-# out of 48990. A large change in either direction is worth investigating.
+# Measured 2026-07-29: 242 functions discovered, 15794 bytes classified as
+# data out of 48990 loaded. A large change in either direction is worth
+# investigating.
+#
+# Split into two tests deliberately: CTest's PASS_REGULAR_EXPRESSION is
+# OR-semantics, so a single test listing both patterns would pass on either
+# one. Requiring a discovered function AND a data region is what proves the
+# traversal actually separated code from data -- classifying everything one
+# way means it is broken.
 add_test(NAME cli_adventure_rom
   COMMAND dis ${CMAKE_SOURCE_DIR}/testdata/adventure.rp6502)
 set_tests_properties(cli_adventure_rom PROPERTIES
   PASS_REGULAR_EXPRESSION "sub_"
+  FAIL_REGULAR_EXPRESSION "ERROR")
+
+add_test(NAME cli_adventure_data
+  COMMAND dis ${CMAKE_SOURCE_DIR}/testdata/adventure.rp6502)
+set_tests_properties(cli_adventure_data PROPERTIES
+  PASS_REGULAR_EXPRESSION "bytes data"
   FAIL_REGULAR_EXPRESSION "ERROR")
 
